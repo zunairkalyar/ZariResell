@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Base style resets */
+body {
+  background-color: #FAF8F5; /* Warm aesthetic ivory tone */
+  color: #1F1F1F; /* Rich primary readable charcoal */
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Custom classes for Pakistan local focus styles */
+.text-brand-primary {
+  color: #7A263A; /* Crimson/maroon luxury traditional accent */
+}
+.bg-brand-primary {
+  background-color: #7A263A;
+}
+.border-brand-primary {
+  border-color: #7A263A;
+}
+.text-brand-secondary {
+  color: #6B6B6B; /* Slate gray */
+}
+.bg-brand-secondary {
+  background-color: #F5E9EC; /* Cozy soft rose backdrop */
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF8F5;
+}
+::-webkit-scrollbar-thumb {
+  background: #E8E2DC;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #7A263A;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Zari Resell - Pakistani Designer Clothing",
+  "description": "Premium multi-brand reseller store for Pakistani designer brands including Khaadi, Sapphire, Limelight, and Maria B. Features dynamic real-time quantity-based pricing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
