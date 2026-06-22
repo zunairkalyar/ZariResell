@@ -20,7 +20,7 @@ interface AdminPanelProps {
   setAdminToken: (token: string | null) => void;
 }
 
-type TabType = 'orders' | 'products' | 'brands' | 'categories' | 'settings';
+type TabType = 'dashboard' | 'orders' | 'products' | 'brands' | 'categories' | 'settings';
 
 export default function AdminPanel({
   onSettingsUpdate,
@@ -35,7 +35,7 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('orders');
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
 
   // Brand form state
   const [newBrandName, setNewBrandName] = useState('');
@@ -76,6 +76,12 @@ export default function AdminPanel({
   const [codAvail, setCodAvail] = useState(db.settings.codAvailable);
   const [tiers, setTiers] = useState<PricingTier[]>(db.settings.tiers);
   const [accounts, setAccounts] = useState<PaymentAccount[]>(db.settings.paymentAccounts);
+  // Personalization settings fields
+  const [personalizationEnabled, setPersonalizationEnabled] = useState(db.settings.personalizationEnabled ?? true);
+  const [viewHistoryDays, setViewHistoryDays] = useState(db.settings.viewHistoryDays ?? 30);
+  const [maxViewHistorySize, setMaxViewHistorySize] = useState(db.settings.maxViewHistorySize ?? 20);
+  const [outOfStockDisplay, setOutOfStockDisplay] = useState<'bottom' | 'hide' | 'visible'>(db.settings.outOfStockDisplay ?? 'bottom');
+
   // Custom markdown page editor strings
   const [aboutUs, setAboutUs] = useState(db.settings.pages.aboutUs);
   const [shipPolicy, setShipPolicy] = useState(db.settings.pages.shipPolicy);
@@ -99,6 +105,10 @@ export default function AdminPanel({
     setAboutUs(db.settings.pages.aboutUs);
     setShipPolicy(db.settings.pages.shipPolicy);
     setReturnPolicy(db.settings.pages.returnPolicy);
+    setPersonalizationEnabled(db.settings.personalizationEnabled ?? true);
+    setViewHistoryDays(db.settings.viewHistoryDays ?? 30);
+    setMaxViewHistorySize(db.settings.maxViewHistorySize ?? 20);
+    setOutOfStockDisplay(db.settings.outOfStockDisplay ?? 'bottom');
   }, [db.settings]);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -263,6 +273,10 @@ export default function AdminPanel({
       codAvailable: codAvail,
       tiers: tiers,
       paymentAccounts: accounts,
+      personalizationEnabled,
+      viewHistoryDays: Number(viewHistoryDays),
+      maxViewHistorySize: Number(maxViewHistorySize),
+      outOfStockDisplay,
       pages: {
         ...db.settings.pages,
         aboutUs,
@@ -1138,6 +1152,113 @@ export default function AdminPanel({
                     onChange={(e) => setShipTime(e.target.value)}
                     className="mt-1 w-full rounded border border-stone-200 p-2 text-xs focus:outline-[#800020]"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* 🎯 Smart Personalization & Product Re-Ranking System */}
+            <div id="smart-personalization-card" className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-lg font-serif font-bold text-stone-950 flex items-center gap-2">
+                  <span>🎯 Smart Viewed-Product Re-Ranking</span>
+                  <span className="text-[10px] font-mono bg-indigo-50 px-2 py-0.5 text-indigo-700 rounded font-bold uppercase select-none animate-pulse">
+                    Customer Experience Engine
+                  </span>
+                </h3>
+                <p className="text-xs text-stone-500 mt-1 leading-normal">
+                  Configure how the dynamic product catalog handles customer view history. Product views are recorded automatically. Once visited, items are safely deprioritized to prioritize fresh discoveries, while cart and wishlist actions mitigate penalties.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-stone-100">
+                {/* Global Toggle */}
+                <div className="flex items-center justify-between p-4 rounded-lg bg-stone-50 border border-stone-200/60">
+                  <div className="space-y-0.5">
+                    <label className="text-xs font-bold text-stone-850 uppercase tracking-wider block">Enable Personalization</label>
+                    <span className="text-[10px] text-stone-400 block font-sans">
+                      Automatically re-rank and shuffle product cards based on guest view history.
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center h-6 rounded-full w-11 shrink-0 cursor-pointer select-none">
+                    <input
+                      id="toggle-personalization-ranking"
+                      type="checkbox"
+                      checked={personalizationEnabled}
+                      onChange={(e) => setPersonalizationEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <span className="w-11 h-6 bg-stone-250 rounded-full peer peer-focus:ring-2 peer-focus:ring-[#800020]/20 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#800020]"></span>
+                  </label>
+                </div>
+
+                {/* Out Of Stock displays */}
+                <div className="space-y-2 p-4 rounded-lg bg-stone-50 border border-stone-200/60">
+                  <label className="text-xs font-bold text-stone-850 uppercase tracking-wider block" htmlFor="select-out-of-stock-display">
+                    Out Of Stock Display Rules
+                  </label>
+                  <select
+                    id="select-out-of-stock-display"
+                    value={outOfStockDisplay}
+                    onChange={(e) => setOutOfStockDisplay(e.target.value as any)}
+                    className="w-full text-xs bg-white border border-stone-200 rounded-lg p-2.5 font-semibold text-stone-850 focus:ring-1 focus:ring-[#800020] focus:border-[#800020] outline-none"
+                  >
+                    <option value="bottom">Push to the bottom of the feed (Default)</option>
+                    <option value="hide">Hide completely from the search feedback catalog</option>
+                    <option value="visible">Keep sorting order visible in-place</option>
+                  </select>
+                  <span className="text-[10px] text-stone-400 block font-medium">
+                    Manage listing display priorities when all inventory items within a folder are sold out.
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Decay setting Slider */}
+                <div className="space-y-2 p-4 rounded-lg bg-stone-50 border border-stone-200/60">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-stone-850 uppercase tracking-wider block">
+                      History Decay Window
+                    </label>
+                    <span className="font-mono text-xs font-black text-[#800020] bg-[#800020]/5 px-2 py-0.5 rounded">
+                      {viewHistoryDays} Days
+                    </span>
+                  </div>
+                  <input
+                    id="input-history-decay-days"
+                    type="range"
+                    min="1"
+                    max="180"
+                    value={viewHistoryDays}
+                    onChange={(e) => setViewHistoryDays(Number(e.target.value))}
+                    className="w-full h-1 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-[#800020]"
+                  />
+                  <span className="text-[10px] text-stone-400 block font-sans">
+                    Define the duration (in days) that visited product history stays active before scoring decays back to baseline.
+                  </span>
+                </div>
+
+                {/* Max history size input */}
+                <div className="space-y-2 p-4 rounded-lg bg-stone-50 border border-stone-200/60">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-stone-850 uppercase tracking-wider block">
+                      Max Tracked History size
+                    </label>
+                    <span className="font-mono text-xs font-bold text-stone-600 bg-stone-200/50 px-2 py-0.5 rounded">
+                      {maxViewHistorySize} Items
+                    </span>
+                  </div>
+                  <input
+                    id="input-max-history-size"
+                    type="number"
+                    min="5"
+                    max="100"
+                    value={maxViewHistorySize}
+                    onChange={(e) => setMaxViewHistorySize(Number(e.target.value) || 20)}
+                    className="w-full rounded-lg border border-stone-200 bg-white p-2 text-xs font-semibold focus:ring-1 focus:ring-[#800020]"
+                  />
+                  <span className="text-[10px] text-stone-400 block font-sans">
+                    Limit the maximum collection array items inside guest localStorage cache. Recommended: 20 slots.
+                  </span>
                 </div>
               </div>
             </div>

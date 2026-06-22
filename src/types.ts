@@ -95,6 +95,17 @@ export interface StoreSettings {
   codAvailable: boolean;
   paymentAccounts: PaymentAccount[];
   tiers: PricingTier[];
+  personalizationEnabled?: boolean;
+  viewHistoryDays?: number;
+  maxViewHistorySize?: number;
+  personalizationLocations?: {
+    homepage?: boolean;
+    shop?: boolean;
+    brands?: boolean;
+    categories?: boolean;
+    newArrivals?: boolean;
+  };
+  outOfStockDisplay?: 'bottom' | 'hide' | 'visible';
   pages: {
     aboutUs: string;
     contactUs: string;

@@ -47,3 +47,13 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #7A263A;
 }
+
+/* Hide scrollbar for modern browsers while preserving swipe navigation capability */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { 
   ShoppingBag, 
   Search, 
@@ -17,6 +18,7 @@ import {
   Share2, 
   ArrowLeft,
   X,
+  Plus,
   AlertCircle
 } from 'lucide-react';
 
@@ -26,6 +28,7 @@ import ProductCard from './components/ProductCard';
 import CartSidebar from './components/CartSidebar';
 import AdminPanel from './components/AdminPanel';
 import { Brand, Category, Product, Order, StoreSettings, OrderItem } from './types';
+import { sortAndFilterProducts, recordProductView, getViewHistory, ProductViewInfo } from './utils/personalization';
 
 export default function App() {
   // Global Database State
@@ -34,6 +37,9 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+
+  // Personalization view history state
+  const [viewHistory, setViewHistory] = useState<ProductViewInfo[]>([]);
 
   // Navigation & User views
   const [currentView, setView] = useState<string>('home'); // 'home' | 'shop' | 'brand-catalog' | 'product-detail' | 'checkout' | 'order-confirmation' | 'admin' | 'policy'
@@ -53,6 +59,13 @@ export default function App() {
 
   // Shopping Cart client State
   const [cart, setCart] = useState<{ productId: string; size: string; color: string; quantity: number }[]>([]);
+  
+  // Quick Add sheet state
+  const [quickAddProduct, setQuickAddProduct] = useState<Product | null>(null);
+  const [quickAddSize, setQuickAddSize] = useState<string>('');
+  const [quickAddColor, setQuickAddColor] = useState<string>('');
+  const [quickAddQty, setQuickAddQty] = useState<number>(1);
+  const [quickAddError, setQuickAddError] = useState<string>('');
   
   // Server-computed cart details (Secure pricing source)
   const [serverCartDetails, setServerCartDetails] = useState<{
@@ -139,6 +152,9 @@ export default function App() {
       if (savedFavs) setFavourites(JSON.parse(savedFavs));
       const savedCart = localStorage.getItem('zari_cart');
       if (savedCart) setCart(JSON.parse(savedCart));
+      
+      const savedHistory = getViewHistory();
+      setViewHistory(savedHistory);
     } catch (_) {}
   }, []);
 
@@ -152,6 +168,15 @@ export default function App() {
         });
     }
   }, [adminToken]);
+
+  // Default sorting selection based on personalization configuration
+  useEffect(() => {
+    if (settings?.personalizationEnabled) {
+      setSortBy('recommended');
+    } else {
+      setSortBy('newest');
+    }
+  }, [settings]);
 
   // Recalculating Cart dynamically from our secure backend (Anti-Manipulate rates)
   useEffect(() => {
@@ -428,6 +453,10 @@ export default function App() {
     setDetailError('');
     setView('product-detail');
     window.scrollTo({ top: 0, behavior: 'instant' });
+
+    // Record product view for personalization
+    const updatedHistory = recordProductView(p.id, settings?.maxViewHistorySize || 20);
+    setViewHistory(updatedHistory);
   };
 
   // Filters catalog logic
@@ -483,29 +512,19 @@ export default function App() {
     return true;
   });
 
-  // Sorting logics
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
-    if (sortBy === 'brand') {
-      return a.brandName.localeCompare(b.brandName);
-    }
-    if (sortBy === 'popular') {
-      const aFeatured = a.featured ? 1 : 0;
-      const bFeatured = b.featured ? 1 : 0;
-      return bFeatured - aFeatured;
-    }
-    if (sortBy === 'instock') {
-      const tA = a.variants.reduce((x, y) => x + y.stock, 0);
-      const tB = b.variants.reduce((x, y) => x + y.stock, 0);
-      return tB - tA;
-    }
-    if (sortBy === 'lowstock') {
-      const tA = a.variants.reduce((x, y) => x + y.stock, 0);
-      const tB = b.variants.reduce((x, y) => x + y.stock, 0);
-      return tA - tB; // lowest stock first
-    }
-    // Default newest first
-    return b.newArrival ? 1 : -1;
-  });
+  // Sorting & Personalization logics
+  const sortedProducts = sortAndFilterProducts(
+    filteredProducts,
+    viewHistory,
+    {
+      personalizationEnabled: settings?.personalizationEnabled ?? true,
+      viewHistoryDays: settings?.viewHistoryDays ?? 30,
+      outOfStockDisplay: settings?.outOfStockDisplay ?? 'bottom',
+      cartProductIds: cart.map(c => c.productId),
+      wishlistProductIds: [] // No separate wishlist array, can feed standard lists
+    },
+    sortBy
+  );
 
   // Safe checks
   if (!settings) {
@@ -534,6 +553,8 @@ export default function App() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         onCartClick={() => setCartOpen(true)}
+        products={products}
+        onInspectProduct={handleInspectProductDetail}
       />
 
       {/* Cart Drawer */}
@@ -659,6 +680,15 @@ export default function App() {
                       product={product}
                       onProductClick={handleInspectProductDetail}
                       onQuickAdd={(p, s, c) => handleAddToCart(p.id, s, c, 1)}
+                      onOpenQuickAddSheet={(p) => {
+                        setQuickAddProduct(p);
+                        const productSizes = Array.from(new Set(p.variants.map(v => v.size)));
+                        const productColors = Array.from(new Set(p.variants.map(v => v.color)));
+                        setQuickAddSize(productSizes[0] || '');
+                        setQuickAddColor(productColors[0] || '');
+                        setQuickAddQty(1);
+                        setQuickAddError('');
+                      }}
                     />
                   </div>
                 ))}
@@ -898,9 +928,15 @@ export default function App() {
                       onChange={(e) => setSortBy(e.target.value)}
                       className="rounded border border-stone-200 bg-white p-1.5 focus:outline-none"
                     >
+                      {settings?.personalizationEnabled && (
+                        <option value="recommended">★ Recommended for You</option>
+                      )}
                       <option value="newest">New Arrivals</option>
                       <option value="brand">Brand A-Z</option>
                       <option value="popular">Popular Featured</option>
+                      {settings?.personalizationEnabled && (
+                        <option value="unviewed_first">Unviewed Items First</option>
+                      )}
                       <option value="instock">High Stock First</option>
                       <option value="lowstock">Low Stock Urgent</option>
                     </select>
@@ -936,6 +972,15 @@ export default function App() {
                           product={product}
                           onProductClick={handleInspectProductDetail}
                           onQuickAdd={(p, s, c) => handleAddToCart(p.id, s, c, 1)}
+                          onOpenQuickAddSheet={(p) => {
+                            setQuickAddProduct(p);
+                            const productSizes = Array.from(new Set(p.variants.map(v => v.size)));
+                            const productColors = Array.from(new Set(p.variants.map(v => v.color)));
+                            setQuickAddSize(productSizes[0] || '');
+                            setQuickAddColor(productColors[0] || '');
+                            setQuickAddQty(1);
+                            setQuickAddError('');
+                          }}
                         />
                       </div>
                     ))}
@@ -1685,12 +1730,240 @@ export default function App() {
                   </>
                 )}
               </div>
-
             </div>
           </div>
         )}
 
       </main>
+
+      {/* 7. MOBILE PRODUCT DETAIL STICKY ACTION BAR */}
+      {currentView === 'product-detail' && selectedProduct && (
+        <div className="fixed bottom-[52px] inset-x-0 z-30 md:hidden bg-white/95 backdrop-blur-lg border-t border-stone-200 px-4 py-2.5 shadow-lg flex items-center justify-between">
+          <div className="text-left">
+            <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest block font-sans">Price Per Piece</span>
+            <span className="text-xs font-black text-[#800020] font-sans">Rs. 2,000 <span className="text-[9px] text-stone-400 font-normal font-mono">(Wholesale)</span></span>
+          </div>
+          <button
+            onClick={() => {
+              // Direct selection helper
+              const p = selectedProduct;
+              setQuickAddProduct(p);
+              const productSizes = Array.from(new Set(p.variants.map(v => v.size)));
+              const productColors = Array.from(new Set(p.variants.map(v => v.color)));
+              setQuickAddSize(productSizes[0] || '');
+              setQuickAddColor(productColors[0] || '');
+              setQuickAddQty(1);
+              setQuickAddError('');
+            }}
+            className="rounded-lg bg-stone-950 hover:bg-[#800020] text-stone-100 px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-colors flex items-center gap-1"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add to Carton</span>
+          </button>
+        </div>
+      )}
+
+      {/* 12. RESPONSIVE MOBILE QUICK ADD DRAWER / MODAL */}
+      <AnimatePresence>
+        {quickAddProduct && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+            {/* Backdrop with blur */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setQuickAddProduct(null)}
+              className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs"
+            />
+
+            {/* Slider Sheet */}
+            <motion.div
+              initial={{ y: '100%', opacity: 0.5 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0.5 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="relative w-full max-w-sm sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl z-50 overflow-hidden border border-stone-200 pb-8 sm:pb-5 text-stone-900"
+            >
+              {/* Top Handle bar */}
+              <div className="w-12 h-1 bg-stone-200 rounded-full mx-auto mb-4 sm:hidden" />
+
+              {/* Close Button */}
+              <button
+                onClick={() => setQuickAddProduct(null)}
+                className="absolute top-4 right-4 p-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <h3 className="font-serif text-base font-black text-stone-900 mb-3 pr-6 leading-tight">
+                Quick Select Article
+              </h3>
+
+              {/* Product Thumbnail & Details Card */}
+              <div className="flex gap-3 p-2.5 bg-stone-50 rounded-xl border border-stone-200 mb-4">
+                <img
+                  src={quickAddProduct.images[0] || 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?q=80&w=600&auto=format&fit=crop'}
+                  alt={quickAddProduct.title}
+                  referrerPolicy="no-referrer"
+                  className="w-14 h-18 object-cover rounded-lg bg-stone-200 border border-stone-300 shadow-xs shrink-0"
+                />
+                <div className="flex flex-col justify-center min-w-0">
+                  <span className="text-[9px] font-black tracking-widest text-[#800020] uppercase font-sans mb-0.5">
+                    {quickAddProduct.brandName}
+                  </span>
+                  <h4 className="font-serif text-xs font-bold text-stone-900 truncate leading-tight mb-0.5">
+                    {quickAddProduct.title}
+                  </h4>
+                  <p className="font-mono text-[9px] text-stone-400 font-bold mb-0.5">
+                    SKU Code: {quickAddProduct.code}
+                  </p>
+                  <p className="font-sans text-[10px] font-black text-[#800020]">
+                    Rs. 2,000 per piece <span className="text-[9px] text-stone-400 font-normal font-mono">(bulk rates auto-apply)</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Variant selections fields */}
+              <div className="space-y-4 text-left font-sans text-xs">
+                {/* 1. Size Selection list */}
+                <div>
+                  <h5 className="font-bold text-stone-700 mb-2 uppercase tracking-wider text-[9px]">
+                    Available Size options:
+                  </h5>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from(new Set(quickAddProduct.variants.map(v => v.size))).map(size => {
+                      const isSelected = quickAddSize === size;
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => {
+                            setQuickAddSize(size);
+                            // Set default color for this size if not exists
+                            const sameSizeVars = quickAddProduct.variants.filter(v => v.size === size);
+                            if (sameSizeVars.length > 0) {
+                              setQuickAddColor(sameSizeVars[0].color);
+                            }
+                            setQuickAddError('');
+                          }}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
+                            isSelected
+                              ? 'bg-stone-950 border-stone-950 text-white shadow-xs'
+                              : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-stone-950'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Color Selection list */}
+                <div>
+                  <h5 className="font-bold text-stone-700 mb-2 uppercase tracking-wider text-[9px]">
+                    Color variants:
+                  </h5>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from(new Set(quickAddProduct.variants.filter(v => v.size === quickAddSize).map(v => v.color))).map(color => {
+                      const isSelected = quickAddColor === color;
+                      // Find stock of this variant
+                      const currentVar = quickAddProduct.variants.find(v => v.size === quickAddSize && v.color === color);
+                      const isOutOfStock = !currentVar || currentVar.stock <= 0;
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          disabled={isOutOfStock}
+                          onClick={() => {
+                            setQuickAddColor(color);
+                            setQuickAddError('');
+                          }}
+                          className={`rounded-lg px-2 py-1 text-xs font-semibold transition-all border flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed ${
+                            isSelected
+                              ? 'bg-[#800020] border-[#800020] text-white font-bold'
+                              : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-[#800020]'
+                          }`}
+                        >
+                          <span>{color}</span>
+                          <span className="text-[9px] font-mono opacity-50">({currentVar?.stock ?? 0} left)</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Quantity selectors */}
+                <div className="flex items-center justify-between border-t border-stone-100 pt-3 mt-2">
+                  <span className="font-bold text-stone-700 uppercase tracking-wider text-[9px]">Select Quantity:</span>
+                  <div className="flex items-center border border-stone-200 rounded-lg overflow-hidden bg-stone-50">
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddQty(Math.max(1, quickAddQty - 1))}
+                      className="p-1 px-2 text-stone-500 hover:bg-stone-200 font-bold"
+                    >
+                      -
+                    </button>
+                    <span className="px-3 font-mono font-bold text-xs text-stone-800">{quickAddQty}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentVar = quickAddProduct.variants.find(v => v.size === quickAddSize && v.color === quickAddColor);
+                        const maxStock = currentVar ? currentVar.stock : 1;
+                        if (quickAddQty >= maxStock) {
+                          setQuickAddError(`Max available stock is ${maxStock}`);
+                          return;
+                        }
+                        setQuickAddError('');
+                        setQuickAddQty(quickAddQty + 1);
+                      }}
+                      className="p-1 px-2 text-stone-500 hover:bg-stone-200 font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {quickAddError && (
+                  <p className="text-[10px] font-black text-red-600 mt-2">{quickAddError}</p>
+                )}
+
+                {/* Confirm action button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const chosenSize = quickAddSize;
+                    const chosenColor = quickAddColor;
+                    if (!chosenSize) {
+                      setQuickAddError('Please select a size first');
+                      return;
+                    }
+                    if (!chosenColor) {
+                      setQuickAddError('Please select a color first');
+                      return;
+                    }
+                    const variant = quickAddProduct.variants.find(v => v.size === chosenSize && v.color === chosenColor);
+                    if (!variant || variant.stock <= 0) {
+                      setQuickAddError('Selected variant combination is out of stock');
+                      return;
+                    }
+                    if (quickAddQty > variant.stock) {
+                      setQuickAddError(`Available stock is only ${variant.stock}`);
+                      return;
+                    }
+
+                    handleAddToCart(quickAddProduct.id, chosenSize, chosenColor, quickAddQty);
+                    setQuickAddProduct(null);
+                  }}
+                  className="w-full bg-stone-950 hover:bg-[#800020] text-stone-100 font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md active:scale-98 mt-3 cursor-pointer"
+                >
+                  Confirm Carton Pack Add
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* FOOTER SECTION (MANDATORY BRAND PROTECTION DISCLAIMER) */}
       <footer className="bg-stone-900 text-[#FAF9F6] pt-12 pb-6 border-t border-stone-850 font-sans">

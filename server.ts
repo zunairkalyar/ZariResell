@@ -38,7 +38,17 @@ app.get('/api/store-data', (req, res) => {
     products: db.products.filter(p => !p.hidden),
     settings: {
       ...db.settings,
-      // Hide any potential sensitive password/account rules if they exist
+      personalizationEnabled: db.settings.personalizationEnabled !== undefined ? db.settings.personalizationEnabled : true,
+      viewHistoryDays: db.settings.viewHistoryDays !== undefined ? db.settings.viewHistoryDays : 30,
+      maxViewHistorySize: db.settings.maxViewHistorySize !== undefined ? db.settings.maxViewHistorySize : 20,
+      personalizationLocations: db.settings.personalizationLocations || {
+        homepage: true,
+        shop: true,
+        brands: true,
+        categories: true,
+        newArrivals: true
+      },
+      outOfStockDisplay: db.settings.outOfStockDisplay || 'bottom'
     }
   });
 });
@@ -535,6 +545,54 @@ app.put('/api/admin/products/:id', authenticateAdmin, (req, res) => {
   res.json({ success: true, product });
 });
 
+// Admin Bulk Products Actions
+app.post('/api/admin/products/bulk', authenticateAdmin, (req, res) => {
+  const db = getDatabase();
+  const { productIds, action, value } = req.body;
+  if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+    res.status(400).json({ error: 'Missing productIds list' });
+    return;
+  }
+
+  let count = 0;
+  for (const id of productIds) {
+    const product = db.products.find(p => p.id === id);
+    if (!product) continue;
+
+    count++;
+    if (action === 'publish') {
+      product.hidden = false;
+    } else if (action === 'hide') {
+      product.hidden = true;
+    } else if (action === 'delete') {
+      // Mark as hidden (soft-delete to prevent order history breaking)
+      product.hidden = true;
+    } else if (action === 'mark_featured') {
+      product.featured = true;
+    } else if (action === 'remove_featured') {
+      product.featured = false;
+    } else if (action === 'mark_new_arrival') {
+      product.newArrival = true;
+    } else if (action === 'update_brand') {
+      product.brandId = value;
+      const b = db.brands.find(x => x.id === value);
+      if (b) product.brandName = b.name;
+    } else if (action === 'update_category') {
+      product.categoryId = value;
+    } else if (action === 'update_stock') {
+      const st = Number(value);
+      if (!isNaN(st)) {
+        product.variants.forEach(v => {
+          v.stock = st;
+        });
+      }
+    }
+  }
+
+  saveDatabase();
+  res.json({ success: true, count });
+});
+
 app.delete('/api/admin/products/:id', authenticateAdmin, (req, res) => {
   const db = getDatabase();
   const idx = db.products.findIndex(p => p.id === req.params.id);
@@ -551,7 +609,7 @@ app.delete('/api/admin/products/:id', authenticateAdmin, (req, res) => {
 // Update global store settings, tiers, accounts, flat fees
 app.put('/api/admin/settings', authenticateAdmin, (req, res) => {
   const db = getDatabase();
-  const { whatsappNumber, instagramUrl, facebookUrl, flatShippingFee, freeShippingThreshold, shippingTimeEstimate, codAvailable, paymentAccounts, tiers, pages } = req.body;
+  const { whatsappNumber, instagramUrl, facebookUrl, flatShippingFee, freeShippingThreshold, shippingTimeEstimate, codAvailable, paymentAccounts, tiers, pages, personalizationEnabled, viewHistoryDays, maxViewHistorySize, personalizationLocations, outOfStockDisplay } = req.body;
 
   if (whatsappNumber !== undefined) db.settings.whatsappNumber = whatsappNumber;
   if (instagramUrl !== undefined) db.settings.instagramUrl = instagramUrl;
@@ -560,6 +618,13 @@ app.put('/api/admin/settings', authenticateAdmin, (req, res) => {
   if (freeShippingThreshold !== undefined) db.settings.freeShippingThreshold = Number(freeShippingThreshold);
   if (shippingTimeEstimate !== undefined) db.settings.shippingTimeEstimate = shippingTimeEstimate;
   if (codAvailable !== undefined) db.settings.codAvailable = !!codAvailable;
+  
+  if (personalizationEnabled !== undefined) db.settings.personalizationEnabled = !!personalizationEnabled;
+  if (viewHistoryDays !== undefined) db.settings.viewHistoryDays = Number(viewHistoryDays) || 30;
+  if (maxViewHistorySize !== undefined) db.settings.maxViewHistorySize = Number(maxViewHistorySize) || 20;
+  if (personalizationLocations !== undefined) db.settings.personalizationLocations = personalizationLocations;
+  if (outOfStockDisplay !== undefined) db.settings.outOfStockDisplay = outOfStockDisplay;
+
   if (paymentAccounts !== undefined && Array.isArray(paymentAccounts)) db.settings.paymentAccounts = paymentAccounts;
   if (tiers !== undefined && Array.isArray(tiers)) {
     db.settings.tiers = tiers.map(t => ({
